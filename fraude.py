@@ -1,41 +1,90 @@
 import streamlit as st
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
 
-st.set_page_config(page_title="Fraud AI", layout="centered")
+# -------------------------------
+# 🔥 DATASET SIMULÉ FRAUDE
+# -------------------------------
+def generate_data(n=2000):
+    np.random.seed(42)
 
-st.title("🏦💳 Fraud Detection - BASIC")
+    data = pd.DataFrame({
+        "amount": np.random.gamma(2, 150, n),
+        "country_risk": np.random.randint(0, 3, n),  # 0=low,1=medium,2=high
+        "device_risk": np.random.randint(0, 2, n),
+        "transactions_24h": np.random.randint(1, 20, n),
+    })
 
-st.write("✅ Application fonctionnelle")
+    # règle simulée de fraude
+    data["fraud"] = (
+        (data["amount"] > 300) |
+        (data["country_risk"] == 2) |
+        (data["transactions_24h"] > 12)
+    ).astype(int)
 
-# ---------------- INPUT ----------------
-amount = st.number_input("💰 Montant", 0, 10000, 100)
-country = st.selectbox("🌍 Pays étranger ?", ["Non", "Oui"])
-device = st.selectbox("📱 Device suspect ?", ["Non", "Oui"])
-transactions = st.slider("🔁 Transactions récentes", 0, 10, 1)
+    return data
 
-# ---------------- SCORE SIMPLE ----------------
-if st.button("Tester"):
+# -------------------------------
+# 🚀 TRAIN MODEL
+# -------------------------------
+@st.cache_resource
+def train_model(df):
+    X = df.drop("fraud", axis=1)
+    y = df["fraud"]
 
-    score = 0
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
 
-    if amount > 1000:
-        score += 40
-    if country == "Oui":
-        score += 30
-    if device == "Oui":
-        score += 30
-    if transactions > 5:
-        score += 20
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
 
-    score = min(score, 100)
+    preds = model.predict(X_test)
+    acc = accuracy_score(y_test, preds)
 
-    st.subheader("📊 Résultat")
-    st.write("Score:", score)
+    return model, acc
 
-    st.progress(score / 100)
+# -------------------------------
+# 🌐 STREAMLIT APP
+# -------------------------------
 
-    if score > 70:
-        st.error("🚨 FRAUDE PROBABLE")
-    elif score > 30:
-        st.warning("⚠️ RISQUE MOYEN")
+def main():
+    st.title("🚨 Détection de Fraude IA")
+
+    df = generate_data()
+    model, acc = train_model(df)
+
+    st.subheader("📊 Dataset")
+    st.dataframe(df.head())
+
+    st.subheader(f"🎯 Accuracy du modèle: {acc:.2f}")
+
+    st.subheader("🧪 Test en temps réel")
+
+    amount = st.slider("Montant", 0, 1000, 100)
+    country = st.selectbox("Risque pays", [0, 1, 2])
+    device = st.selectbox("Risque device", [0, 1])
+    tx = st.slider("Transactions 24h", 1, 20, 3)
+
+    input_data = np.array([[amount, country, device, tx]])
+
+    prob = model.predict_proba(input_data)[0][1]
+    prediction = model.predict(input_data)[0]
+
+    st.subheader("📡 Score de risque")
+    st.metric("Risque fraude (%)", f"{prob*100:.2f}%")
+
+    if prediction == 1:
+        st.error("🚨 FRAUDE SUSPECTÉE")
     else:
-        st.success("✅ TRANSACTION NORMALE")
+        st.success("✅ Transaction normale")
+
+    st.subheader("📈 Statistiques")
+    st.bar_chart(df["fraud"].value_counts())
+
+
+if __name__ == "__main__":
+    main()
